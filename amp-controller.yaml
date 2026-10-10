@@ -1,0 +1,151 @@
+# Example: classic ESP32 DevKit / WROOM. Change board AND pins for C3/S3/etc.
+substitutions:
+  sda_pin: GPIO21
+  scl_pin: GPIO22
+  encoder_a: GPIO32
+  encoder_b: GPIO33
+  encoder_button: GPIO25
+
+esphome:
+  name: audiocom-controller
+  friendly_name: Audiocom Controller
+  min_version: 2026.9.1
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [fs2105]
+
+logger:
+
+# Local operation needs neither a router nor Home Assistant.
+# Hold encoder button for 5 seconds to enable this maintenance AP.
+wifi:
+  enable_on_boot: false
+  reboot_timeout: 0s
+  ap:
+    ssid: Audiocom Maintenance
+    password: !secret maintenance_password
+    ap_timeout: 1s
+
+# AP-only mode: browse directly to http://192.168.4.1/ after joining it.
+# Local UI assets allow the web page to work without internet access.
+web_server:
+  port: 80
+  version: 2
+  local: true
+  auth:
+    type: digest
+    username: admin
+    password: !secret web_password
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+  - platform: web_server
+
+# No API by default. Optional HA instructions are in README.md.
+i2c:
+  sda: ${sda_pin}
+  scl: ${scl_pin}
+  frequency: 100kHz
+  scan: false
+
+fs2105:
+  id: amp
+  address: 0x68
+  enable_control: false  # Set true AFTER checking identity and bus ownership.
+  apply_startup: true
+  startup_volume: -40  # dB; starts UNMUTED when control is enabled.
+  min_volume: -80
+  max_volume: 0
+  boot_delay: 10s
+  update_interval: 5s
+  volume:
+    name: Master Volume
+    id: amp_volume
+  mute:
+    name: Mute
+    id: amp_mute
+  left_volume:
+    name: Left Volume Readback
+  right_volume:
+    name: Right Volume Readback
+  woofer_volume:
+    name: Woofer Volume Readback
+  connected:
+    name: Amplifier Connected
+    id: amp_connected
+  channels_differ:
+    name: Channel Settings Differ
+  status:
+    name: Amplifier Status
+
+sensor:
+  - platform: rotary_encoder
+    id: encoder
+    internal: true
+    pin_a:
+      number: ${encoder_a}
+      mode:
+        input: true
+        pullup: true
+    pin_b:
+      number: ${encoder_b}
+      mode:
+        input: true
+        pullup: true
+    resolution: 1
+    on_clockwise:
+      - lambda: id(amp).change_volume(0.9375f);
+    on_anticlockwise:
+      - lambda: id(amp).change_volume(-0.9375f);
+
+binary_sensor:
+  - platform: gpio
+    id: encoder_push
+    internal: true
+    pin:
+      number: ${encoder_button}
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+    filters:
+      - delayed_on: 20ms
+      - delayed_off: 20ms
+    on_click:
+      min_length: 40ms
+      max_length: 500ms
+      then:
+        - lambda: id(amp).toggle_mute();
+    on_multi_click:
+      - timing:
+          - ON for at least 5s
+        then:
+          - wifi.enable:
+          - logger.log: "Maintenance Wi-Fi enabled; reboot or use web button to disable"
+
+button:
+  - platform: template
+    name: Refresh Amplifier Feedback
+    on_press:
+      - lambda: id(amp).refresh();
+  - platform: template
+    name: Clear Amplifier Write Fault
+    entity_category: diagnostic
+    on_press:
+      - lambda: id(amp).clear_write_fault();
+  - platform: template
+    name: Disable Maintenance Wi-Fi
+    entity_category: config
+    on_press:
+      - wifi.disable:
+  - platform: restart
+    name: Restart Controller

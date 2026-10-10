@@ -1,0 +1,35 @@
+# Optional ONE WS2812 RGB LED, external or on a board with a known pin.
+# Add to the main YAML:
+# packages:
+#   rgb: !include rgb-status.yaml
+# Change rgb_pin and channel_colors for your ESP32 board. This does not drive
+# the matrix on a separate RP2040 board.
+substitutions:
+  rgb_pin: GPIO27
+light:
+  - platform: esp32_rmt_led_strip
+    id: amp_rgb
+    internal: true
+    pin: ${rgb_pin}
+    num_leds: 1
+    chipset: WS2812
+    channel_colors: GRB
+    restore_mode: ALWAYS_OFF
+    default_transition_length: 0s
+interval:
+  - interval: 500ms
+    then:
+      - lambda: |-
+          auto call = id(amp_rgb).turn_on();
+          call.set_brightness(0.05f);
+          if (!id(amp).is_connected() || id(amp).has_write_fault())
+            call.set_rgb(1.0f, 0.0f, 0.0f);
+          else if (id(amp).is_muted())
+            call.set_rgb(0.6f, 0.0f, 1.0f);
+          else if (id(amp_volume).state < -20.0f)
+            call.set_rgb(0.0f, 1.0f, 0.0f);
+          else if (id(amp_volume).state < -6.0f)
+            call.set_rgb(1.0f, 0.7f, 0.0f);
+          else
+            call.set_rgb(1.0f, 0.2f, 0.0f);
+          call.perform();

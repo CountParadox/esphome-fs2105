@@ -1,0 +1,26 @@
+name: Validate component and ESP32 firmware
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install esphome==2026.9.1
+      - run: cp secrets.example.yaml secrets.yaml
+      - run: python tests/test_driver.py
+      - run: esphome config amp-controller.yaml
+      - run: esphome compile amp-controller.yaml
+      - name: Build optional RGB configuration
+        run: |
+          cp amp-controller.yaml amp-controller-rgb-test.yaml
+          cat >> amp-controller-rgb-test.yaml <<'EOF'
+
+          packages:
+            rgb: !include rgb-status.yaml
+          EOF
+          esphome compile amp-controller-rgb-test.yaml
